@@ -4,7 +4,7 @@ description: Repo-agnostic engineering-quality skill with three modes. AUDIT —
 version: 2.0.0
 user-invocable: true
 argument-hint: "[audit [dimension] | untangle <target> | cleanup [target]] [--fix]"
-license: Apache 2.0
+license: MIT
 ---
 
 # specdev
