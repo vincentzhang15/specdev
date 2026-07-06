@@ -1,9 +1,9 @@
 ---
 name: repo-audit
-description: Run a comprehensive, verified audit of any repository across ten dimensions — architecture & layering, duplication, clean code, correctness & robustness, product guarantees, cost efficiency & metering, security, performance, docs truthfulness + live verifiability, and product feature maturity (spec-vs-implementation against researched industry standards). The bar is the REAL APP working end to end, never unit-test coverage. Every confirmed finding is also filed to the repo's backlog. Use when the user asks to scan, audit, health-check, or deep-review a repo (or one dimension, e.g. "/repo-audit cost", "/repo-audit product"). Report-only by default; applies fixes only with an explicit "--fix".
-version: 1.0.0
+description: Run a comprehensive, verified audit of any repository across ten dimensions — architecture & layering, duplication, clean code, correctness & robustness, product guarantees, cost efficiency & metering, security, performance, docs truthfulness + live verifiability, and product feature maturity (spec-vs-implementation against researched industry standards). Includes an "untangle" mode that convenes a method-diverse agent council (LLM Council pattern) to question and unpick spaghetti code. The bar is the REAL APP working end to end, never unit-test coverage. Every confirmed finding is also filed to the repo's backlog. Use when the user asks to scan, audit, health-check, or deep-review a repo (or one dimension, e.g. "/repo-audit cost", "/repo-audit product"), or to untangle/refactor a tangled area ("/repo-audit untangle src/foo"). Report-only by default; applies fixes only with an explicit "--fix".
+version: 1.1.0
 user-invocable: true
-argument-hint: "[architecture|duplication|clean-code|correctness|guarantees|cost|security|performance|docs-live|product] [--fix]"
+argument-hint: "[architecture|duplication|clean-code|correctness|guarantees|cost|security|performance|docs-live|product | untangle <target>] [--fix]"
 license: Apache 2.0
 ---
 
@@ -11,7 +11,7 @@ license: Apache 2.0
 
 A full-repo scan that produces a **scorecard + verified findings**, graded against the repo's **own** invariants — not generic lint rules. This skill hardcodes nothing about any particular project: every project-specific rule it enforces is *discovered* from the repo itself (docs, code, git history) at the start of the run. Every finding must survive adversarial verification before it is reported. The deliverable is a report the owner can act on: grades per dimension, findings ranked P0→P2, and the three highest-leverage fixes.
 
-**Arguments:** an optional dimension filter (`architecture`, `duplication`, `clean-code`, `correctness`, `guarantees`, `cost`, `security`, `performance`, `docs-live`, `product`) and/or `--fix`. No filter = all ten (note: `product` involves web research and is the slowest — on a full run, ask whether to include it). `--fix` = after reporting, apply P0/P1 fixes committed incrementally, each verified against the LIVE app (see fix gates below).
+**Arguments:** an optional dimension filter (`architecture`, `duplication`, `clean-code`, `correctness`, `guarantees`, `cost`, `security`, `performance`, `docs-live`, `product`), or `untangle <target>`, and/or `--fix`. No filter = all ten (note: `product` involves web research and is the slowest — on a full run, ask whether to include it). `untangle <file|module|area>` = skip the scorecard and convene a council deliberation (see "Council deliberation" below) on that tangled area, producing a disentanglement verdict — report-only unless `--fix`. `--fix` = after reporting, apply P0/P1 fixes committed incrementally, each verified against the LIVE app (see fix gates below).
 
 **Quality bar: the real app, end to end.** The bar everywhere in this audit is "does the actual product work" — a live run of the app's core flow behaving correctly. Unit tests are a free background signal if the repo has them (a red suite is still information), but never the bar, never a grading criterion, and never something to spend time writing or extending during an audit.
 
@@ -32,11 +32,11 @@ This phase is what makes the audit repo-specific. Do it before any scanning:
 
 ### Phase 1 — dimension scans
 
-For a full audit, fan out parallel read-only agents (one per 2–3 dimensions, each given the relevant checklist below **plus the discovered invariants profile** verbatim). For a single dimension, scan inline. Agents return findings as `{file, line, claim, evidence, severity, confidence}` — raw data, not prose.
+For a full audit, fan out parallel read-only agents (one per 2–3 dimensions, each given the relevant checklist below **plus the discovered invariants profile** verbatim). Agents run with independent contexts — none sees another's findings while scanning (independence blocks anchoring). For a single dimension, scan inline. Agents return findings as `{file, line, claim, evidence, severity, confidence}` — raw data, not prose.
 
 ### Phase 2 — adversarial verification
 
-Re-check every finding against current code yourself (or via a verifier agent prompted to REFUTE it). A finding with no file:line proof, or whose "dead code" has a caller anywhere in the repo (source, tests, scripts, static assets), or whose "stale claim" turns out true, is dropped silently. Only CONFIRMED findings reach the report.
+Re-check every finding against current code yourself (or via a verifier agent prompted to REFUTE it). A finding with no file:line proof, or whose "dead code" has a caller anywhere in the repo (source, tests, scripts, static assets), or whose "stale claim" turns out true, is dropped silently. Only CONFIRMED findings reach the report. When a P0's validity — or the right fix for it — stays genuinely contested after refutation, escalate to a council deliberation (below) instead of picking a side on one line of reasoning.
 
 ### Phase 3 — report + backlog
 
@@ -60,6 +60,7 @@ Each checklist below is the *generic* shape of the dimension. The specifics — 
 - Entry points (route handlers, CLI mains, controllers) stay thin: parse → auth → delegate → record. Business logic creeping into them is a finding.
 - **Single-authority invariants** (discovered): for each concept the repo declares has exactly ONE writer or ONE sanctioned call path (money mutations, user-visible copy for a given notice, the sole client wrapper for an external API), grep for a second implementation anywhere. A second writer is P1.
 - Swappable seams stay swappable: where the code declares a pluggable interface (backend flags, strategy functions), verify all declared implementations still satisfy the shared signature.
+- **Tangle signals** (spaghetti detection): cyclic import clusters; modules with both high fan-in AND high fan-out; shotgun surgery in the history (`git log` shows the same file sets repeatedly changed together — a change here always drags changes there); functions mixing abstraction levels (I/O + business rules + presentation in one body); control flow threaded through shared mutable state or mode flags. Report the worst offenders as findings, and name them candidates for `untangle` mode — detection is this dimension's job; the disentanglement *plan* is the council's.
 
 ### 2. Duplication
 - Grep for re-implementations of the repo's own utility concepts — derive the list from its actual utils/helpers modules (distance math, time/date parsing, formatting, normalization, scoring…). One implementation per concept, imported everywhere.
@@ -126,6 +127,30 @@ The other dimensions ask "is the code right?"; this one asks **"is the product c
 4. **Grade maturity per area**: `MVP` (core gaps) / `functional` (core ✓, expected gaps) / `competitive` (expected ✓) / `best-in-class` (differentiators present). A `[core]` gap in a shipped, user-visible feature is P1.
 5. **Also audit integration, not just presence**: features that exist but don't feed each other are gaps too (canonical example: user data that never influences recommendations). Ask of every data asset "what else should this power?".
 6. File every gap to the backlog, and keep `specs/` committed — the next run diffs against it instead of starting over, and re-research only when a spec is >6 months old or the user asks.
+
+---
+
+## Council deliberation — questioning and untangling tangled code
+
+Detection tells you a module is spaghetti; deciding how to unpick it is a design judgment where any single line of reasoning reliably misses things. For those calls this skill uses a **council** — adapted from the LLM Council pattern (Karpathy; the council-review and design-council skills): several advisors reasoning in parallel from *genuinely different methods*, anonymized peer review, a step-back judge, and one synthesized verdict with dissent preserved.
+
+**When to convene (proportionality).** A council costs 10–20× a single analysis — convene one only when the stakes earn it: `untangle` mode on a load-bearing module, a contested P0 whose fix has multiple plausible designs, or an architecture-changing decision during `--fix`. For routine findings, Phase 2's single adversarial verifier remains the default. Councils deliberate; they never edit code.
+
+**Mechanics:**
+
+1. **Brief once, share with all.** Write a shared brief before spawning anyone: the tangle map (file:line evidence from the tangle signals, a dependency sketch, who calls what, and — critically — the observable behaviors that must NOT change), the discovered invariants profile, constraints, and the repo's verification bar. Every advisor gets the same brief; none sees another's reasoning while forming its position (parallel independence blocks groupthink and anchoring).
+2. **Method-diverse advisors.** Diversity of reasoning *method*, not just persona — same-model advisors given only different hats converge on identical logic. The default bench, each with a mandated stance so structural tension forces coverage:
+   - **Contrarian** — inversion: assume the proposed untangling shipped and broke production; trace backward to what broke. MUST find failure modes.
+   - **First-principles** — decomposition: enumerate the module's actual responsibilities as atomic claims; challenge whether each belongs here at all. MUST question the existing structure, not accept it as given.
+   - **Expansionist** — analogy: how do adjacent domains and well-factored codebases structure this concern? MUST find at least one alternative shape.
+   - **Outsider** — naive questioning: flag every part of the design that can only be justified by insider knowledge or historical accident. MUST ask the "dumb" questions.
+   - **Executor** — dependency graphing: what extraction order is actually shippable; what blocks what; where the seams already are. MUST produce a step sequence, not an end-state.
+   Swap in domain seats (security, performance, data-migration) when the tangle touches those areas.
+3. **Anonymized peer review.** Strip the role labels, relabel positions A–E, and have each advisor critique the other four. Anonymity removes deference to the "senior-sounding" role; critique targets reasoning, not status.
+4. **Step-back judge.** One agent audits the *debate itself*, not the code: what did ALL advisors miss? And classify every disagreement — a **value tension** (a real tradeoff; surface it to the owner) or an **error catch** (someone is factually wrong; resolve it, never average over it).
+5. **Synthesis with dissent preserved.** One clear, unhedged recommendation — the synthesizer may side with a minority when its reasoning is strongest (no tyranny of the majority). The verdict must state: **convergence zones** (what independent advisors agreed on unprompted — the high-confidence signal), the chosen seam-by-seam plan, **"what you lose"** (the strongest dissent, kept intact, not smoothed over), and **concrete verification steps** against the live app for each stage of the plan.
+
+**Untangling execution (only with `--fix` or an explicit ask).** Behavior-preserving and seams-first, never a big-bang rewrite: first characterize current behavior against the live app (record what the tangled code actually does today, including its bugs — changing behavior is a separate decision for the owner); then extract one seam per commit in the Executor's order; gate every commit on the Phase 3 fix gates (typecheck + live e2e smoke). If a step's smoke fails, revert that step — don't debug forward on top of a broken extraction.
 
 ---
 
