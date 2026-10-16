@@ -1,15 +1,15 @@
 ---
 name: specdev
-description: Repo-agnostic engineering lifecycle skill with four modes. SPEC — build features spec-first: Socratic brainstorm, researched spec, clarify, plan, dependency-ordered tasks, gated implementation. AUDIT — adversarially verified review across ten dimensions (architecture, duplication, clean code, correctness, product guarantees, cost & metering, security, performance, docs truthfulness, product maturity). UNTANGLE — method-diverse agent council (LLM Council) to question and unpick spaghetti code. CLEANUP — rewrite accreted docs/code into one cohesive entity. The bar is the REAL APP end to end, never unit tests; repo invariants are discovered into a constitution, never hardcoded. Use for "spec out/plan/build a feature" ("/specdev spec dark-mode"), scan/audit/health-check ("/specdev audit cost"), refactoring tangled code ("/specdev untangle src/foo"), or a clean write ("/specdev cleanup README.md"). Audit/untangle report-only and spec implements only with "--fix"; cleanup writes by default.
-version: 3.0.0
+description: Repo-agnostic engineering lifecycle skill, five modes. SPEC — features spec-first: Socratic brainstorm, researched spec, clarify, plan, ordered tasks, gated implementation. AUDIT — adversarially verified review across ten dimensions (architecture, duplication, clean code, correctness, product guarantees, cost, security, performance, docs truthfulness, product maturity). UNTANGLE — method-diverse agent council to unpick spaghetti code. CLEANUP — rewrite accreted docs/code into one cohesive entity. QA — parallel fake-user agents drive the running app, file screenshot findings with fix proposals to a review page; approved ones get fixed. The bar is the REAL APP end to end, never unit tests; repo invariants are discovered, never hardcoded. Use for "/specdev spec dark-mode", "/specdev audit cost", "/specdev untangle src/foo", "/specdev cleanup README.md", "/specdev qa" (dogfood, bug hunt, fake users). Audit/untangle/qa report-only and spec implements only with "--fix"; cleanup writes by default.
+version: 3.1.0
 user-invocable: true
-argument-hint: "[spec <feature> | audit [dimension] | untangle <target> | cleanup [target]] [--fix]"
+argument-hint: "[spec <feature> | audit [dimension] | untangle <target> | cleanup [target] | qa [personas]] [--fix]"
 license: MIT
 ---
 
 # specdev
 
-A repo-agnostic skill for the full engineering lifecycle: building new features spec-first, and keeping what's already built honest — with itself, with its docs, and with its users. It hardcodes nothing about any particular project: every project-specific rule it enforces is *discovered* from the target repo (docs, code, git history) before any judgment is made. Four modes share one discovery phase, one constitution, and one set of principles:
+A repo-agnostic skill for the full engineering lifecycle: building new features spec-first, and keeping what's already built honest — with itself, with its docs, and with its users. It hardcodes nothing about any particular project: every project-specific rule it enforces is *discovered* from the target repo (docs, code, git history) before any judgment is made. Five modes share one discovery phase, one constitution, and one set of principles:
 
 | Mode | Question it answers | Output |
 |---|---|---|
@@ -17,8 +17,9 @@ A repo-agnostic skill for the full engineering lifecycle: building new features 
 | `audit [dimension]` *(default)* | Is the repo right, and is the product complete? | Scorecard + verified findings, P0→P2 |
 | `untangle <target>` | This code is spaghetti — how should it actually be structured? | A council-deliberated disentanglement verdict |
 | `cleanup [target]` | This artifact is patch-upon-patch — what is its clean form? | The artifact rewritten as one cohesive entity |
+| `qa [personas]` | What does a real user trip over? | A screenshot review page of findings + fix proposals; approved ones fixed with `--fix` |
 
-The modes feed each other: audit's product-maturity gaps are spec mode's inputs; spec mode's specs are what the next audit grades shipped features against; audit's tangle signals name untangle's targets. Methodology lineage, so future edits know what to preserve: the audit dimensions and council pattern (Karpathy's LLM Council via council-review/design-council), the spec workflow (GitHub spec-kit), brainstorm-first, per-task verification, and two-stage review (obra/superpowers).
+The modes feed each other: qa finds what users trip over and hands approved findings to the fix gates; audit's product-maturity gaps are spec mode's inputs; spec mode's specs are what the next audit grades shipped features against; audit's tangle signals name untangle's targets. Methodology lineage, so future edits know what to preserve: the audit dimensions and council pattern (Karpathy's LLM Council via council-review/design-council), the spec workflow (GitHub spec-kit), brainstorm-first, per-task verification, and two-stage review (obra/superpowers).
 
 ## Operating principles (all modes)
 
@@ -235,3 +236,23 @@ Repos accrete. An artifact that has been patched repeatedly — a doc, a module,
 5. **One commit per artifact**, message stating what was consolidated and any deliberate drops.
 
 Cleanup **writes by default** — a cleanup that only describes itself is a report, and audit already produces those. It stays safe the same way everything here does: clean tree to start, incremental commits, code gated on the live smoke, and never a push.
+
+---
+
+# Mode: qa
+
+Fake users dogfood the running app in parallel and nitpick it: bugs, console errors, broken flows, confusing copy, layout, motion, anything the repo's own design rules forbid. They **report; the owner decides; only then does anything get fixed.**
+
+**Personas.** Use the owner's `[personas]` argument, else `.claude/qa.md` in the target repo if present (personas, run command, device, seed data), else derive 3 from the product's core flows found in Phase 0 — e.g. a first-timer, a power user of the main feature, a user of the most stateful feature. Each persona is a goal plus a temperament ("impatient, one-handed on a phone"), not a script.
+
+**Run — one background agent per persona, fully isolated** (shared anything collides):
+- its own worktree (`isolation: "worktree"`), its own dev-server port (e.g. 8801, 8802, …), its own local data, its own browser session name, and its own scratch folder; dependencies symlinked in, not reinstalled;
+- browser via `agent-browser --session <persona>` (load its `dogfood` and `core` skills first), at the product's real device size; native apps via the platform simulator;
+- sign up through the UI like a real user; create extra accounts via the API when the persona needs someone to interact with;
+- known traps: headless browsers refuse location (stub `navigator.geolocation` in the page); dev servers serve stale JS/CSS after a plain reload (clear the cache before reloading); external APIs without local keys (use the app's offline paths and say so).
+
+**Each finding** is one entry in `<findings>/<persona>.json` plus screenshots `<id>.png`, `<id>b.png`, … beside it: `{"id","persona","title","severity": "bug|ux|polish","description": what I did / what happened / what I expected,"proposal": root cause with file:line and the fix approach,"same_as": [ids]}`. A finding needs evidence: a screenshot, a console line, or a file:line. Agents write no code in this phase.
+
+**Review.** When all agents finish, dedupe across personas (fill `same_as`), then build the page with `python3 <this skill>/qa/review.py <findings> <out.html> "<Product> QA"` and publish it as a private Artifact (or open it locally). Summarize in chat: counts by severity, the duplicates, anything blocked.
+
+**Fix** (only with `--fix` or the owner naming approved ids). One fixer agent per approved finding or cluster of related ones, under the fix gates — worktree, live verification in the browser of the exact flow the finding describes, two-stage review — then merge. Re-run the persona that found it to confirm the fix from the user's side. Never push.
